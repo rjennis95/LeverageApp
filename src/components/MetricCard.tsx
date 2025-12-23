@@ -10,9 +10,10 @@ interface MetricCardProps {
   trend?: "up" | "down" | "neutral";
   data: { date: string; value: number }[];
   color?: string;
+  subLabel?: string;
 }
 
-export function MetricCard({ title, value, trend, data, color }: MetricCardProps) {
+export function MetricCard({ title, value, trend, data, color, subLabel }: MetricCardProps) {
   const trendColor =
     trend === "up"
       ? "text-green-500"
@@ -22,10 +23,15 @@ export function MetricCard({ title, value, trend, data, color }: MetricCardProps
 
   return (
     <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex flex-col space-y-1 pb-2">
         <CardTitle className="text-sm font-medium text-slate-400">
           {title}
         </CardTitle>
+        {subLabel && (
+          <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">
+            {subLabel}
+          </span>
+        )}
       </CardHeader>
       <CardContent>
         <div className={cn("text-2xl font-bold", trendColor)}>{value}</div>
