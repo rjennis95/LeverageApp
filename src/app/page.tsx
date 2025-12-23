@@ -10,11 +10,6 @@ export default function Dashboard() {
   const [data, setData] = useState<MarketHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Computed state for charts
-  const [shortTermData, setShortTermData] = useState<any[]>([]);
-  const [mediumTermData, setMediumTermData] = useState<any[]>([]);
-  const [longTermData, setLongTermData] = useState<any[]>([]);
-
   useEffect(() => {
     async function loadData() {
       const history = await getMarketHistory();
@@ -28,7 +23,6 @@ export default function Dashboard() {
 
   // --- Live/Latest Values Helpers ---
   const getLast = (arr: HistoryPoint[]) => arr && arr.length > 0 ? arr[arr.length - 1].value : 0;
-  const getLastDate = (arr: HistoryPoint[]) => arr && arr.length > 0 ? arr[arr.length - 1].date : "";
   
   // Data extraction
   const spyDaily = data?.spyDaily || [];
@@ -45,21 +39,19 @@ export default function Dashboard() {
   const diffEma50d = spyDaily.map(p => {
       const ema = ema50d.find(e => e.date === p.date)?.value;
       if(!ema) return { date: p.date, value: 0 };
-      return { date: p.date, value: ((p.value - ema)/ema)*100 };
+      // Calculation: (Price / EMA) - 1
+      return { date: p.date, value: ((p.value / ema) - 1) * 100 };
   });
   
   // Daily RSI (14)
   const rsiDaily = calculateRSI(spyDaily, 14);
   
-  // Breadth Proxy (RSP relative to its SMA20) -> % > 20d SMA proxy
-  // We use the 'breadth' array directly if it represents a proxy value, or calculate logic.
-  // In marketData.ts, we fetch RSP price history as 'breadth'.
-  // We need to calculate RSP % > SMA20.
+  // Breadth Proxy
   const breadthSma20 = calculateSMA(breadthDaily, 20);
   const diffBreadthSma20 = breadthDaily.map(p => {
       const sma = breadthSma20.find(s => s.date === p.date)?.value;
       if(!sma) return { date: p.date, value: 0 };
-      return { date: p.date, value: ((p.value - sma)/sma)*100 };
+      return { date: p.date, value: ((p.value / sma) - 1) * 100 };
   });
 
   // 2. Medium Term (Weekly)
@@ -68,24 +60,22 @@ export default function Dashboard() {
   const diffEma50w = spyWeekly.map(p => {
       const ema = ema50w.find(e => e.date === p.date)?.value;
       if(!ema) return { date: p.date, value: 0 };
-      return { date: p.date, value: ((p.value - ema)/ema)*100 };
+      return { date: p.date, value: ((p.value / ema) - 1) * 100 };
   });
 
   // Weekly RSI (14)
   const rsiWeekly = calculateRSI(spyWeekly, 14);
 
-  // VIX (Daily history is fine for 3Y view)
-
   // 3. Long Term (Monthly)
   // Monthly RSI (14)
   const rsiMonthly = calculateRSI(spyMonthly, 14);
 
-  // SPY % > 50m EMA (NOT 200d SMA)
+  // SPY % > 50m EMA
   const ema50m = calculateEMA(spyMonthly, 50);
   const diffEma50m = spyMonthly.map(p => {
       const ema = ema50m.find(e => e.date === p.date)?.value;
       if(!ema) return { date: p.date, value: 0 };
-      return { date: p.date, value: ((p.value - ema)/ema)*100 };
+      return { date: p.date, value: ((p.value / ema) - 1) * 100 };
   });
 
   // --- Latest Values for Display ---
@@ -103,7 +93,6 @@ export default function Dashboard() {
 
 
   // --- Leverage Score Logic ---
-  // Updated with new inputs
   let rawScore = 50; 
   if (valEma50d > 0) rawScore += 15; 
   if (valBreadth > 0) rawScore += 15; 
@@ -135,9 +124,10 @@ export default function Dashboard() {
   if (!apiKeyExists) {
       statusColor = "bg-red-500";
       statusText = "API Key Missing";
-  } else if (data?.isMock) {
-      statusColor = "bg-yellow-500";
-      statusText = "Using Fallback Data (API Limit)";
+  } else if (!data) {
+      // If loading finished but no data -> API probably failed or limit reached
+      statusColor = "bg-red-500";
+      statusText = "API Error / Limit Reached";
   }
 
   // --- Chart Configs ---
@@ -242,68 +232,90 @@ export default function Dashboard() {
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {/* Short Term */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
-            Short-Term (1 Year)
-          </h2>
-          {shortTerm.map((metric, i) => (
-            <MetricCard
-              key={i}
-              title={metric.title}
-              subLabel={metric.subLabel}
-              value={metric.value}
-              trend={metric.trend}
-              data={metric.data}
-              color="#34d399" 
-            />
-          ))}
-        </div>
+         {loading ? (
+             <div className="col-span-3 flex items-center justify-center h-64 border border-slate-800 rounded-xl bg-slate-900/50">
+                 <div className="flex flex-col items-center gap-4">
+                    <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-slate-400 animate-pulse">Loading Live Market Data...</span>
+                 </div>
+             </div>
+         ) : !data ? (
+             <div className="col-span-3 flex items-center justify-center h-64 border border-slate-800 rounded-xl bg-slate-900/50">
+                 <div className="flex flex-col items-center gap-2 text-center">
+                    <span className="text-red-500 font-bold text-xl">Unable to Load Data</span>
+                    <span className="text-slate-400 max-w-md">
+                        Please check your API Key configuration or try again later (API Limit might be reached).
+                    </span>
+                 </div>
+             </div>
+         ) : (
+          <>
+            {/* Short Term */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
+                Short-Term (1 Year)
+              </h2>
+              {shortTerm.map((metric, i) => (
+                <MetricCard
+                  key={i}
+                  title={metric.title}
+                  subLabel={metric.subLabel}
+                  value={metric.value}
+                  trend={metric.trend}
+                  data={metric.data}
+                  color="#34d399" 
+                />
+              ))}
+            </div>
 
-        {/* Medium Term */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
-            Medium-Term (3 Years)
-          </h2>
-          {mediumTerm.map((metric, i) => (
-            <MetricCard
-              key={i}
-              title={metric.title}
-              subLabel={metric.subLabel}
-              value={metric.value}
-              trend={metric.trend}
-              data={metric.data}
-              color="#60a5fa" 
-            />
-          ))}
-        </div>
+            {/* Medium Term */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
+                Medium-Term (3 Years)
+              </h2>
+              {mediumTerm.map((metric, i) => (
+                <MetricCard
+                  key={i}
+                  title={metric.title}
+                  subLabel={metric.subLabel}
+                  value={metric.value}
+                  trend={metric.trend}
+                  data={metric.data}
+                  color="#60a5fa" 
+                />
+              ))}
+            </div>
 
-        {/* Long Term */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
-            Long-Term (10 Years)
-          </h2>
-          {longTerm.map((metric, i) => (
-            <MetricCard
-              key={i}
-              title={metric.title}
-              subLabel={metric.subLabel}
-              value={metric.value}
-              trend={metric.trend}
-              data={metric.data}
-              color="#a78bfa" 
-            />
-          ))}
-        </div>
+            {/* Long Term */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
+                Long-Term (10 Years)
+              </h2>
+              {longTerm.map((metric, i) => (
+                <MetricCard
+                  key={i}
+                  title={metric.title}
+                  subLabel={metric.subLabel}
+                  value={metric.value}
+                  trend={metric.trend}
+                  data={metric.data}
+                  color="#a78bfa" 
+                />
+              ))}
+            </div>
+          </>
+         )}
       </div>
 
-      {/* Leverage Gauge Section */}
-      <section className="mt-12">
-        <h2 className="text-2xl font-semibold text-slate-300 text-center mb-6">
-          Recommended Leverage Exposure
-        </h2>
-        <LeverageGauge score={Math.round(leverageScore)} warning={isSafetyWarning} />
-      </section>
+      {/* Leverage Gauge Section - Only show if data loaded */}
+      {data && (
+        <section className="mt-12">
+            <h2 className="text-2xl font-semibold text-slate-300 text-center mb-6">
+            Recommended Leverage Exposure
+            </h2>
+            <LeverageGauge score={Math.round(leverageScore)} warning={isSafetyWarning} />
+        </section>
+      )}
     </div>
   );
 }

@@ -47,7 +47,7 @@ export function MetricCard({ title, value, trend, data, color, subLabel }: Metri
                 dataKey="date" 
                 tickFormatter={(str) => str.split("-")[0]} // Show Year only
                 interval="preserveStartEnd"
-                minTickGap={30}
+                minTickGap={50}
                 tick={{ fontSize: 10, fill: "#888888" }}
                 axisLine={{ stroke: '#888888', strokeWidth: 1, opacity: 0.2 }}
                 tickLine={{ stroke: '#888888', opacity: 0.2 }}
