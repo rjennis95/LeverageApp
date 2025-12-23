@@ -28,12 +28,6 @@ export default function Dashboard() {
         const spyEma50 = calculateEMA(spyPrices, 50);
         const spyRsi14 = calculateRSI(spyPrices, 14);
         const spySma20 = calculateSMA(spyPrices, 20); // Using SMA20 of price as proxy for "% Stocks > 20d SMA" (which we can't get)
-        // Note: Real "% Stocks > 20d SMA" is market breadth. We are substituting with "SPY vs 20d SMA" or similar for the chart, 
-        // OR we just show SPY price history in that box but labeled correctly? 
-        // The prompt says "replace... with single useEffect... TIME_SERIES_DAILY... Map...". 
-        // It implies using the SPY data for these charts. 
-        // I will map SPY Price history to the "Short Term" charts, but maybe overlay the indicator?
-        // MetricCard only takes `data`. I'll pass the indicator history if available.
         
         // Dates
         const today = new Date();
@@ -100,16 +94,10 @@ export default function Dashboard() {
   };
   
   // Specific Indicator Arrays for Charts
-  // We need to re-calculate these for the full history then slice, to ensure accuracy
   const fullRsi = calculateRSI(spyPrices, 14);
-  const fullEma50 = calculateEMA(spyPrices, 50); // For % > EMA chart? Or just Price? 
-  // Visuals: The cards are titled "SPY % > 50d EMA". A line chart of that % would be best.
-  // Let's create derived arrays.
+  const fullEma50 = calculateEMA(spyPrices, 50); 
   
   const diffEma50 = spyPrices.map((p, i) => {
-      // Find matching EMA (dates align if we are careful, but safer to lookup)
-      // Since calculateEMA returns aligned dates if passed same array? 
-      // calculateEMA starts from index 0 of input.
       const ema = fullEma50.find(e => e.date === p.date)?.value;
       if (!ema) return { date: p.date, value: 0 };
       return { date: p.date, value: ((p.value - ema) / ema) * 100 };
@@ -136,24 +124,23 @@ export default function Dashboard() {
       data: filterSince(fullRsi, 1),
     },
     {
-      title: "% Stocks > 20d SMA (Proxy: SPY vs SMA20)", // Renamed to be honest about proxy
-      value: fmtPct(pctAboveSma20), // "52%" was hardcoded. Now using proxy.
+      title: "% Stocks > 20d SMA (Proxy: SPY vs SMA20)", 
+      value: fmtPct(pctAboveSma20), 
       trend: "up" as const,
       data: filterSince(diffSma20, 1),
     },
   ];
 
   // Medium Term (3Y)
-  // Need Weekly RSI? Calculating Daily RSI over 3 years is fine visualization.
   const mediumTerm = [
     {
-      title: "SPY % > 50d EMA (3Y)", // Using 50d instead of 50w for simplicity of "single useEffect"
+      title: "SPY % > 50d EMA (3Y)", 
       value: fmtPct(pctAboveEma),
       trend: "up" as const,
       data: filterSince(diffEma50, 3),
     },
     {
-      title: "Daily RSI (3Y)", // Using Daily instead of Weekly
+      title: "Daily RSI (3Y)", 
       value: fmtNum(latestRsi),
       trend: "neutral" as const,
       data: filterSince(fullRsi, 3),
@@ -169,13 +156,13 @@ export default function Dashboard() {
   // Long Term (10Y)
   const longTerm = [
     {
-      title: "Daily RSI (10Y)", // Using Daily instead of Monthly
+      title: "Daily RSI (10Y)", 
       value: fmtNum(latestRsi),
       trend: "up" as const,
       data: filterSince(fullRsi, 10),
     },
     {
-      title: "SPY Price (10Y)", // Replaced "Stocks > 200d SMA" with Price since we don't have breadth data
+      title: "SPY Price (10Y)", 
       value: fmtNum(latestSpy),
       trend: "up" as const,
       data: filterSince(spyPrices, 10),
@@ -187,6 +174,21 @@ export default function Dashboard() {
       data: [], // No history for P/E from this API
     },
   ];
+  
+  // Status check logic
+  const apiKeyExists = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_MARKET_DATA_KEY;
+  // If we are using mock data, consider it a "warning" state for the light, or "green" if intentional?
+  // Let's make it yellow if Mock, Red if missing Key, Green if Live.
+  let statusColor = "bg-green-500";
+  let statusText = "System Normal";
+  
+  if (!apiKeyExists) {
+      statusColor = "bg-red-500";
+      statusText = "API Key Missing";
+  } else if (data?.isMock) {
+      statusColor = "bg-yellow-500";
+      statusText = "Using Fallback Data (API Limit)";
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-8 font-mono">
@@ -195,7 +197,13 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-emerald-500 tracking-tight">
             LEVERAGE RISK DASHBOARD
           </h1>
-          <p className="text-slate-400 mt-1">Market Health & Exposure Monitor</p>
+          <div className="flex items-center gap-3 mt-1">
+             <p className="text-slate-400">Market Health & Exposure Monitor</p>
+             <div className="flex items-center gap-2 px-2 py-1 bg-slate-900 rounded-md border border-slate-800" title={statusText}>
+                <div className={`w-2 h-2 rounded-full ${statusColor} animate-pulse`} />
+                <span className="text-xs text-slate-500 hidden md:block">{statusText}</span>
+             </div>
+          </div>
         </div>
         <div className="flex gap-2 items-center">
           <Badge variant="outline" className="text-emerald-400 border-emerald-400/30">

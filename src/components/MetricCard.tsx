@@ -29,7 +29,12 @@ export function MetricCard({ title, value, trend, data, color }: MetricCardProps
       </CardHeader>
       <CardContent>
         <div className={cn("text-2xl font-bold", trendColor)}>{value}</div>
-        <div className="h-[120px] mt-4">
+        <div className="h-[120px] mt-4 relative">
+          {(!data || data.length === 0) && (
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-500 bg-slate-900/50 z-10 text-center px-4">
+                  API Limit Reached - Please wait 60 seconds.
+              </div>
+          )}
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
               <XAxis 
@@ -37,26 +42,16 @@ export function MetricCard({ title, value, trend, data, color }: MetricCardProps
                 tickFormatter={(str) => str.split("-")[0]} // Show Year only
                 interval="preserveStartEnd"
                 minTickGap={30}
-                tick={{ fontSize: 10, fill: "#64748b" }}
-                axisLine={false}
-                tickLine={false}
+                tick={{ fontSize: 10, fill: "#888888" }}
+                axisLine={{ stroke: '#888888', strokeWidth: 1, opacity: 0.2 }}
+                tickLine={{ stroke: '#888888', opacity: 0.2 }}
               />
-              <YAxis 
-                domain={['auto', 'auto']}
-                hide={true} // Keep Y axis hidden for sparkline look, or show it? Prompt says "visible... YAxis domain auto auto". 
-                // But usually sparklines don't have axes. Let's make it visible but subtle.
-                // Wait, "Add visible XAxis... and YAxis".
-              />
-               {/* Actually re-reading: "Set the X-Axis to only show years... Add a Tooltip...". 
-                   So it seems they want a real chart now, not just a sparkline. 
-                   I will make YAxis visible but minimal. 
-               */}
               <YAxis 
                 domain={['auto', 'auto']}
                 width={30}
-                tick={{ fontSize: 10, fill: "#64748b" }}
-                axisLine={false}
-                tickLine={false}
+                tick={{ fontSize: 10, fill: "#888888" }}
+                axisLine={{ stroke: '#888888', strokeWidth: 1, opacity: 0.2 }}
+                tickLine={{ stroke: '#888888', opacity: 0.2 }}
               />
               <Line
                 type="monotone"
