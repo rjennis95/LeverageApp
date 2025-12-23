@@ -10,11 +10,21 @@ export default function Dashboard() {
   const [data, setData] = useState<MarketHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Computed state for charts
+  const [shortTermData, setShortTermData] = useState<any[]>([]);
+  const [mediumTermData, setMediumTermData] = useState<any[]>([]);
+  const [longTermData, setLongTermData] = useState<any[]>([]);
+
   useEffect(() => {
     async function loadData() {
+      // Even if getMarketHistory returns null (due to API limit/missing key), 
+      // we still want to render the page structure, just with empty data.
       const history = await getMarketHistory();
       if (history) {
         setData(history);
+      } else {
+        // Explicitly set null to indicate failure/no data
+        setData(null);
       }
       setLoading(false);
     }
@@ -24,7 +34,7 @@ export default function Dashboard() {
   // --- Live/Latest Values Helpers ---
   const getLast = (arr: HistoryPoint[]) => arr && arr.length > 0 ? arr[arr.length - 1].value : 0;
   
-  // Data extraction
+  // Data extraction - Default to empty arrays if data is null
   const spyDaily = data?.spyDaily || [];
   const spyWeekly = data?.spyWeekly || [];
   const spyMonthly = data?.spyMonthly || [];
@@ -39,7 +49,7 @@ export default function Dashboard() {
   const diffEma50d = spyDaily.map(p => {
       const ema = ema50d.find(e => e.date === p.date)?.value;
       if(!ema) return { date: p.date, value: 0 };
-      // Calculation: (Price / EMA) - 1
+      // Calculation: ((Price / EMA) - 1) * 100
       return { date: p.date, value: ((p.value / ema) - 1) * 100 };
   });
   
@@ -94,13 +104,18 @@ export default function Dashboard() {
 
   // --- Leverage Score Logic ---
   let rawScore = 50; 
-  if (valEma50d > 0) rawScore += 15; 
-  if (valBreadth > 0) rawScore += 15; 
-  if (valRsiDaily < 30) rawScore += 20; 
-  if (valRsiDaily > 70) rawScore -= 20; 
-  if (valVix < 20) rawScore += 10;
-  if (valVix > 30) rawScore -= 20;
-  rawScore = Math.max(0, Math.min(100, rawScore));
+  // Only calculate if we have data
+  if (data) {
+    if (valEma50d > 0) rawScore += 15; 
+    if (valBreadth > 0) rawScore += 15; 
+    if (valRsiDaily < 30) rawScore += 20; 
+    if (valRsiDaily > 70) rawScore -= 20; 
+    if (valVix < 20) rawScore += 10;
+    if (valVix > 30) rawScore -= 20;
+    rawScore = Math.max(0, Math.min(100, rawScore));
+  } else {
+      rawScore = 0; // Or keep at 50 neutral? Let's say 0 to indicate issue.
+  }
 
   const isSafetyWarning = peRatio > 22;
   const leverageScore = isSafetyWarning ? Math.min(rawScore, 45) : rawScore;
@@ -124,10 +139,10 @@ export default function Dashboard() {
   if (!apiKeyExists) {
       statusColor = "bg-red-500";
       statusText = "API Key Missing";
-  } else if (!data) {
+  } else if (!data && !loading) {
       // If loading finished but no data -> API probably failed or limit reached
-      statusColor = "bg-red-500";
-      statusText = "API Error / Limit Reached";
+      statusColor = "bg-yellow-500"; // Yellow to indicate fallback mode (individual charts will show error)
+      statusText = "Partial / Fallback Mode";
   }
 
   // --- Chart Configs ---
@@ -135,21 +150,21 @@ export default function Dashboard() {
     {
       title: "SPY % > 50d EMA",
       subLabel: "Source: AlphaVantage Daily",
-      value: fmtPct(valEma50d),
+      value: data ? fmtPct(valEma50d) : "---",
       trend: valEma50d > 0 ? ("up" as const) : ("down" as const),
       data: filterSince(diffEma50d, 1), 
     },
     {
       title: "Daily RSI (14)",
       subLabel: "Source: AlphaVantage Daily",
-      value: fmtNum(valRsiDaily),
+      value: data ? fmtNum(valRsiDaily) : "---",
       trend: "neutral" as const,
       data: filterSince(rsiDaily, 1),
     },
     {
       title: "Market Breadth (Proxy)",
       subLabel: "RSP (Eq Wgt) % > 20d SMA",
-      value: fmtPct(valBreadth), 
+      value: data ? fmtPct(valBreadth) : "---", 
       trend: valBreadth > 0 ? "up" as const : "down" as const,
       data: filterSince(diffBreadthSma20, 1),
     },
@@ -159,21 +174,21 @@ export default function Dashboard() {
     {
       title: "SPY % > 50w EMA",
       subLabel: "Source: AlphaVantage Weekly",
-      value: fmtPct(valEma50w),
+      value: data ? fmtPct(valEma50w) : "---",
       trend: valEma50w > 0 ? ("up" as const) : ("down" as const),
       data: filterSince(diffEma50w, 3),
     },
     {
       title: "Weekly RSI (14)", 
       subLabel: "Source: AlphaVantage Weekly",
-      value: fmtNum(valRsiWeekly),
+      value: data ? fmtNum(valRsiWeekly) : "---",
       trend: "neutral" as const,
       data: filterSince(rsiWeekly, 3),
     },
     {
       title: "VIX Index",
       subLabel: "Source: AlphaVantage Daily",
-      value: fmtNum(valVix),
+      value: data ? fmtNum(valVix) : "---",
       trend: valVix > 20 ? ("down" as const) : ("neutral" as const), 
       data: filterSince(vixDaily, 3),
     },
@@ -183,21 +198,21 @@ export default function Dashboard() {
     {
       title: "Monthly RSI (14)", 
       subLabel: "Source: AlphaVantage Monthly",
-      value: fmtNum(valRsiMonthly),
+      value: data ? fmtNum(valRsiMonthly) : "---",
       trend: "up" as const,
       data: filterSince(rsiMonthly, 10),
     },
     {
       title: "SPY % > 50m EMA", 
       subLabel: "Source: AlphaVantage Monthly",
-      value: fmtPct(valEma50m),
+      value: data ? fmtPct(valEma50m) : "---",
       trend: valEma50m > 0 ? ("up" as const) : ("down" as const),
       data: filterSince(diffEma50m, 10),
     },
     {
       title: "NTM P/E Multiple",
       subLabel: "Source: AlphaVantage Overview",
-      value: fmtNum(peRatio),
+      value: data ? fmtNum(peRatio) : "---",
       trend: "up" as const,
       data: [], // No history for P/E
     },
@@ -232,24 +247,8 @@ export default function Dashboard() {
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-         {loading ? (
-             <div className="col-span-3 flex items-center justify-center h-64 border border-slate-800 rounded-xl bg-slate-900/50">
-                 <div className="flex flex-col items-center gap-4">
-                    <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-slate-400 animate-pulse">Loading Live Market Data...</span>
-                 </div>
-             </div>
-         ) : !data ? (
-             <div className="col-span-3 flex items-center justify-center h-64 border border-slate-800 rounded-xl bg-slate-900/50">
-                 <div className="flex flex-col items-center gap-2 text-center">
-                    <span className="text-red-500 font-bold text-xl">Unable to Load Data</span>
-                    <span className="text-slate-400 max-w-md">
-                        Please check your API Key configuration or try again later (API Limit might be reached).
-                    </span>
-                 </div>
-             </div>
-         ) : (
-          <>
+         {/* We always render the grid now, passing potentially empty data to cards */}
+         
             {/* Short Term */}
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
@@ -303,19 +302,15 @@ export default function Dashboard() {
                 />
               ))}
             </div>
-          </>
-         )}
       </div>
 
-      {/* Leverage Gauge Section - Only show if data loaded */}
-      {data && (
-        <section className="mt-12">
-            <h2 className="text-2xl font-semibold text-slate-300 text-center mb-6">
-            Recommended Leverage Exposure
-            </h2>
-            <LeverageGauge score={Math.round(leverageScore)} warning={isSafetyWarning} />
-        </section>
-      )}
+      {/* Leverage Gauge Section - Always show, might show 0 score if failed */}
+      <section className="mt-12">
+        <h2 className="text-2xl font-semibold text-slate-300 text-center mb-6">
+        Recommended Leverage Exposure
+        </h2>
+        <LeverageGauge score={Math.round(leverageScore)} warning={isSafetyWarning} />
+      </section>
     </div>
   );
 }
