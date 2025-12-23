@@ -290,17 +290,36 @@ export default function Dashboard() {
               <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
                 Long-Term (10 Years)
               </h2>
-              {longTerm.map((metric, i) => (
-                <MetricCard
-                  key={i}
-                  title={metric.title}
-                  subLabel={metric.subLabel}
-                  value={metric.value}
-                  trend={metric.trend}
-                  data={metric.data}
+              {/* Row 1: SPY % > 50m EMA */}
+              <MetricCard
+                  key="lt-ema"
+                  title={longTerm[1].title}
+                  subLabel={longTerm[1].subLabel}
+                  value={longTerm[1].value}
+                  trend={longTerm[1].trend}
+                  data={longTerm[1].data}
                   color="#a78bfa" 
-                />
-              ))}
+              />
+              {/* Row 2: Monthly RSI */}
+              <MetricCard
+                  key="lt-rsi"
+                  title={longTerm[0].title}
+                  subLabel={longTerm[0].subLabel}
+                  value={longTerm[0].value}
+                  trend={longTerm[0].trend}
+                  data={longTerm[0].data}
+                  color="#a78bfa" 
+              />
+              {/* Row 3: P/E */}
+              <MetricCard
+                  key="lt-pe"
+                  title={longTerm[2].title}
+                  subLabel={longTerm[2].subLabel}
+                  value={longTerm[2].value}
+                  trend={longTerm[2].trend}
+                  data={longTerm[2].data}
+                  color="#a78bfa" 
+              />
             </div>
       </div>
 
