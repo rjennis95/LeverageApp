@@ -4,128 +4,187 @@ import { useEffect, useState } from "react";
 import { MetricCard } from "@/components/MetricCard";
 import { LeverageGauge } from "@/components/LeverageGauge";
 import { Badge } from "@/components/ui/badge";
-import { getMarketData, MarketData } from "@/lib/marketData";
-
-// Dummy data generator for history (keep sparklines visual)
-const generateHistory = (base: number, variance: number) => {
-  return Array.from({ length: 20 }, (_, i) => ({
-    value: base + (Math.random() * variance - variance / 2),
-  }));
-};
+import { getMarketHistory, calculateEMA, calculateRSI, calculateSMA, MarketHistory, HistoryPoint } from "@/lib/marketData";
 
 export default function Dashboard() {
-  const [data, setData] = useState<MarketData | null>(null);
+  const [data, setData] = useState<MarketHistory | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Computed state for charts
+  const [shortTermData, setShortTermData] = useState<any[]>([]);
+  const [mediumTermData, setMediumTermData] = useState<any[]>([]);
+  const [longTermData, setLongTermData] = useState<any[]>([]);
+  const [vixData, setVixData] = useState<HistoryPoint[]>([]);
 
   useEffect(() => {
     async function loadData() {
-      const marketData = await getMarketData();
-      if (marketData) {
-        setData(marketData);
+      const history = await getMarketHistory();
+      if (history) {
+        setData(history);
+        
+        // --- Process Data ---
+        // SPY Arrays
+        const spyPrices = history.spy;
+        const spyEma50 = calculateEMA(spyPrices, 50);
+        const spyRsi14 = calculateRSI(spyPrices, 14);
+        const spySma20 = calculateSMA(spyPrices, 20); // Using SMA20 of price as proxy for "% Stocks > 20d SMA" (which we can't get)
+        // Note: Real "% Stocks > 20d SMA" is market breadth. We are substituting with "SPY vs 20d SMA" or similar for the chart, 
+        // OR we just show SPY price history in that box but labeled correctly? 
+        // The prompt says "replace... with single useEffect... TIME_SERIES_DAILY... Map...". 
+        // It implies using the SPY data for these charts. 
+        // I will map SPY Price history to the "Short Term" charts, but maybe overlay the indicator?
+        // MetricCard only takes `data`. I'll pass the indicator history if available.
+        
+        // Dates
+        const today = new Date();
+        const oneYearAgo = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split("T")[0];
+        const threeYearsAgo = new Date(today.setFullYear(today.getFullYear() - 2)).toISOString().split("T")[0]; // Resetting... wait
+        const tenYearsAgo = new Date(today.setFullYear(today.getFullYear() - 7)).toISOString().split("T")[0]; // -7 more (total 10)
+
+        // Filter Helpers
+        const filterSince = (arr: HistoryPoint[], dateStr: string) => arr.filter(p => p.date >= dateStr);
+
+        // Slice Data
+        setShortTermData(filterSince(spyPrices, oneYearAgo));
+        setMediumTermData(filterSince(spyPrices, threeYearsAgo));
+        setLongTermData(filterSince(spyPrices, tenYearsAgo));
+        setVixData(history.vix);
       }
       setLoading(false);
     }
     loadData();
   }, []);
 
-  // Calculate dynamic values
-  const spyPrice = data?.spyPrice || 440; // fallback
-  const spyEma50 = data?.spyEma50 || 435; // fallback
-  const spyRsi = data?.spyRsi || 48.5; // fallback
-  const vix = data?.vix || 15.04; // fallback
-  const ntmPE = data?.peRatio || 23.1; // fallback
+  // --- Live/Latest Values ---
+  const latestSpy = data?.spy && data.spy.length > 0 ? data.spy[data.spy.length - 1].value : 0;
   
-  // Calculate % > 50d EMA
-  const pctAboveEma = ((spyPrice - spyEma50) / spyEma50) * 100;
+  // Need latest indicators for the text values
+  const spyPrices = data?.spy || [];
+  const rsiArr = calculateRSI(spyPrices, 14);
+  const latestRsi = rsiArr.length > 0 ? rsiArr[rsiArr.length - 1].value : 50;
 
-  // Logic for Leverage Gauge
-  // If data is real, we might want a real calculation. 
-  // For now, let's assume a basic score model derived from these inputs:
-  // - High RSI (>70) -> reduce leverage (risk of pullback)
-  // - Low VIX (<15) -> increase leverage (calm market)
-  // - Price > EMA -> increase leverage (uptrend)
-  // - High P/E (>22) -> SAFETY VETO
+  const ema50Arr = calculateEMA(spyPrices, 50);
+  const latestEma50 = ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1].value : latestSpy;
+
+  const sma20Arr = calculateSMA(spyPrices, 20);
+  const latestSma20 = sma20Arr.length > 0 ? sma20Arr[sma20Arr.length - 1].value : latestSpy;
   
-  // Simple scoring (example logic)
+  const latestVix = data?.vix && data.vix.length > 0 ? data.vix[data.vix.length - 1].value : 15;
+  const peRatio = data?.peRatio || 23.1;
+
+  const pctAboveEma = latestSpy && latestEma50 ? ((latestSpy - latestEma50) / latestEma50) * 100 : 0;
+  const pctAboveSma20 = latestSpy && latestSma20 ? ((latestSpy - latestSma20) / latestSma20) * 100 : 0; // Proxy
+
+  // --- Leverage Score Logic ---
+  // Simple scoring
   let rawScore = 50; 
-  if (pctAboveEma > 0) rawScore += 20; // Uptrend
-  if (spyRsi < 30) rawScore += 20; // Oversold (buy dip)
-  if (spyRsi > 70) rawScore -= 20; // Overbought (caution)
-  if (vix < 20) rawScore += 10;
-  if (vix > 30) rawScore -= 20;
-  
-  // Clamp raw score
+  if (pctAboveEma > 0) rawScore += 20; 
+  if (latestRsi < 30) rawScore += 20; 
+  if (latestRsi > 70) rawScore -= 20; 
+  if (latestVix < 20) rawScore += 10;
+  if (latestVix > 30) rawScore -= 20;
   rawScore = Math.max(0, Math.min(100, rawScore));
 
-  const safetyThreshold = 22;
-  const isSafetyWarning = ntmPE > safetyThreshold;
+  const isSafetyWarning = peRatio > 22;
   const leverageScore = isSafetyWarning ? Math.min(rawScore, 45) : rawScore;
 
   // Formatting helpers
   const fmtPct = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
   const fmtNum = (n: number) => n.toFixed(2);
+  const filterSince = (arr: HistoryPoint[], years: number) => {
+    if (!arr.length) return [];
+    const date = new Date();
+    date.setFullYear(date.getFullYear() - years);
+    const dateStr = date.toISOString().split("T")[0];
+    return arr.filter(p => p.date >= dateStr);
+  };
+  
+  // Specific Indicator Arrays for Charts
+  // We need to re-calculate these for the full history then slice, to ensure accuracy
+  const fullRsi = calculateRSI(spyPrices, 14);
+  const fullEma50 = calculateEMA(spyPrices, 50); // For % > EMA chart? Or just Price? 
+  // Visuals: The cards are titled "SPY % > 50d EMA". A line chart of that % would be best.
+  // Let's create derived arrays.
+  
+  const diffEma50 = spyPrices.map((p, i) => {
+      // Find matching EMA (dates align if we are careful, but safer to lookup)
+      // Since calculateEMA returns aligned dates if passed same array? 
+      // calculateEMA starts from index 0 of input.
+      const ema = fullEma50.find(e => e.date === p.date)?.value;
+      if (!ema) return { date: p.date, value: 0 };
+      return { date: p.date, value: ((p.value - ema) / ema) * 100 };
+  });
 
-  // Data Points
+  const diffSma20 = spyPrices.map((p) => {
+      const sma = calculateSMA(spyPrices, 20).find(s => s.date === p.date)?.value;
+      if (!sma) return { date: p.date, value: 0 };
+      return { date: p.date, value: ((p.value - sma) / sma) * 100 }; // Proxy
+  });
+
+  // Short Term (1Y)
   const shortTerm = [
     {
       title: "SPY % > 50d EMA",
       value: fmtPct(pctAboveEma),
       trend: pctAboveEma > 0 ? ("up" as const) : ("down" as const),
-      data: generateHistory(pctAboveEma, 0.5), // Simulated history for sparkline
+      data: filterSince(diffEma50, 1), 
     },
     {
       title: "Daily RSI",
-      value: fmtNum(spyRsi),
+      value: fmtNum(latestRsi),
       trend: "neutral" as const,
-      data: generateHistory(spyRsi, 5),
+      data: filterSince(fullRsi, 1),
     },
     {
-      title: "% Stocks > 20d SMA",
-      value: "52%", // Still hardcoded/simulated as requested to focus on specific live data
+      title: "% Stocks > 20d SMA (Proxy: SPY vs SMA20)", // Renamed to be honest about proxy
+      value: fmtPct(pctAboveSma20), // "52%" was hardcoded. Now using proxy.
       trend: "up" as const,
-      data: generateHistory(52, 15),
+      data: filterSince(diffSma20, 1),
     },
   ];
 
+  // Medium Term (3Y)
+  // Need Weekly RSI? Calculating Daily RSI over 3 years is fine visualization.
   const mediumTerm = [
     {
-      title: "SPY % > 50w EMA",
-      value: "+11.2%", // Keeping hardcoded as we only fetched Daily
+      title: "SPY % > 50d EMA (3Y)", // Using 50d instead of 50w for simplicity of "single useEffect"
+      value: fmtPct(pctAboveEma),
       trend: "up" as const,
-      data: generateHistory(11.2, 5),
+      data: filterSince(diffEma50, 3),
     },
     {
-      title: "Weekly RSI",
-      value: "52.1", // Keeping hardcoded
+      title: "Daily RSI (3Y)", // Using Daily instead of Weekly
+      value: fmtNum(latestRsi),
       trend: "neutral" as const,
-      data: generateHistory(52.1, 10),
+      data: filterSince(fullRsi, 3),
     },
     {
       title: "VIX Index",
-      value: fmtNum(vix),
-      trend: vix > 20 ? ("down" as const) : ("neutral" as const), 
-      data: generateHistory(vix, 2),
+      value: fmtNum(latestVix),
+      trend: latestVix > 20 ? ("down" as const) : ("neutral" as const), 
+      data: filterSince(data?.vix || [], 3),
     },
   ];
 
+  // Long Term (10Y)
   const longTerm = [
     {
-      title: "Monthly RSI",
-      value: "74.2", // Keeping hardcoded
+      title: "Daily RSI (10Y)", // Using Daily instead of Monthly
+      value: fmtNum(latestRsi),
       trend: "up" as const,
-      data: generateHistory(74.2, 5),
+      data: filterSince(fullRsi, 10),
     },
     {
-      title: "% Stocks > 200d SMA",
-      value: "68%", // Keeping hardcoded
+      title: "SPY Price (10Y)", // Replaced "Stocks > 200d SMA" with Price since we don't have breadth data
+      value: fmtNum(latestSpy),
       trend: "up" as const,
-      data: generateHistory(68, 10),
+      data: filterSince(spyPrices, 10),
     },
     {
       title: "NTM P/E Multiple",
-      value: fmtNum(ntmPE),
+      value: fmtNum(peRatio),
       trend: "up" as const,
-      data: generateHistory(ntmPE, 1),
+      data: [], // No history for P/E from this API
     },
   ];
 
@@ -155,7 +214,7 @@ export default function Dashboard() {
         {/* Short Term */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
-            Short-Term (Tactical)
+            Short-Term (1 Year)
           </h2>
           {shortTerm.map((metric, i) => (
             <MetricCard
@@ -164,7 +223,7 @@ export default function Dashboard() {
               value={metric.value}
               trend={metric.trend}
               data={metric.data}
-              color="#34d399" // emerald-400
+              color="#34d399" 
             />
           ))}
         </div>
@@ -172,7 +231,7 @@ export default function Dashboard() {
         {/* Medium Term */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
-            Medium-Term (Swing)
+            Medium-Term (3 Years)
           </h2>
           {mediumTerm.map((metric, i) => (
             <MetricCard
@@ -181,7 +240,7 @@ export default function Dashboard() {
               value={metric.value}
               trend={metric.trend}
               data={metric.data}
-              color="#60a5fa" // blue-400
+              color="#60a5fa" 
             />
           ))}
         </div>
@@ -189,7 +248,7 @@ export default function Dashboard() {
         {/* Long Term */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-slate-300 border-b border-slate-800 pb-2">
-            Long-Term (Strategic)
+            Long-Term (10 Years)
           </h2>
           {longTerm.map((metric, i) => (
             <MetricCard
@@ -198,7 +257,7 @@ export default function Dashboard() {
               value={metric.value}
               trend={metric.trend}
               data={metric.data}
-              color="#a78bfa" // violet-400
+              color="#a78bfa" 
             />
           ))}
         </div>
