@@ -10,20 +10,12 @@ export default function Dashboard() {
   const [data, setData] = useState<MarketHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Computed state for charts
-  const [shortTermData, setShortTermData] = useState<any[]>([]);
-  const [mediumTermData, setMediumTermData] = useState<any[]>([]);
-  const [longTermData, setLongTermData] = useState<any[]>([]);
-
   useEffect(() => {
     async function loadData() {
-      // Even if getMarketHistory returns null (due to API limit/missing key), 
-      // we still want to render the page structure, just with empty data.
       const history = await getMarketHistory();
       if (history) {
         setData(history);
       } else {
-        // Explicitly set null to indicate failure/no data
         setData(null);
       }
       setLoading(false);
@@ -34,12 +26,12 @@ export default function Dashboard() {
   // --- Live/Latest Values Helpers ---
   const getLast = (arr: HistoryPoint[]) => arr && arr.length > 0 ? arr[arr.length - 1].value : 0;
   
-  // Data extraction - Default to empty arrays if data is null
+  // Data extraction
   const spyDaily = data?.spyDaily || [];
   const spyWeekly = data?.spyWeekly || [];
   const spyMonthly = data?.spyMonthly || [];
   const vixDaily = data?.vixDaily || [];
-  const breadthDaily = data?.breadth || [];
+  const breadthDaily = data?.breadth || []; // RSP proxy
   
   // --- Derived Technicals ---
 
@@ -49,14 +41,13 @@ export default function Dashboard() {
   const diffEma50d = spyDaily.map(p => {
       const ema = ema50d.find(e => e.date === p.date)?.value;
       if(!ema) return { date: p.date, value: 0 };
-      // Calculation: ((Price / EMA) - 1) * 100
       return { date: p.date, value: ((p.value / ema) - 1) * 100 };
   });
   
   // Daily RSI (14)
   const rsiDaily = calculateRSI(spyDaily, 14);
   
-  // Breadth Proxy
+  // Breadth Proxy: RSP % > 20d SMA (Proxy: RSP price vs SMA20)
   const breadthSma20 = calculateSMA(breadthDaily, 20);
   const diffBreadthSma20 = breadthDaily.map(p => {
       const sma = breadthSma20.find(s => s.date === p.date)?.value;
@@ -104,7 +95,6 @@ export default function Dashboard() {
 
   // --- Leverage Score Logic ---
   let rawScore = 50; 
-  // Only calculate if we have data
   if (data) {
     if (valEma50d > 0) rawScore += 15; 
     if (valBreadth > 0) rawScore += 15; 
@@ -114,7 +104,7 @@ export default function Dashboard() {
     if (valVix > 30) rawScore -= 20;
     rawScore = Math.max(0, Math.min(100, rawScore));
   } else {
-      rawScore = 0; // Or keep at 50 neutral? Let's say 0 to indicate issue.
+      rawScore = 0;
   }
 
   const isSafetyWarning = peRatio > 22;
@@ -132,7 +122,8 @@ export default function Dashboard() {
   };
   
   // Status check logic
-  const apiKeyExists = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_MARKET_DATA_KEY;
+  // Use FMP Key
+  const apiKeyExists = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_FMP_KEY || process.env.NEXT_PUBLIC_MARKET_DATA_KEY);
   let statusColor = "bg-green-500";
   let statusText = "System Normal";
   
@@ -140,8 +131,7 @@ export default function Dashboard() {
       statusColor = "bg-red-500";
       statusText = "API Key Missing";
   } else if (!data && !loading) {
-      // If loading finished but no data -> API probably failed or limit reached
-      statusColor = "bg-yellow-500"; // Yellow to indicate fallback mode (individual charts will show error)
+      statusColor = "bg-yellow-500";
       statusText = "Partial / Fallback Mode";
   }
 
@@ -149,21 +139,21 @@ export default function Dashboard() {
   const shortTerm = [
     {
       title: "SPY % > 50d EMA",
-      subLabel: "Source: AlphaVantage Daily",
+      subLabel: "Source: FMP Daily",
       value: data ? fmtPct(valEma50d) : "---",
       trend: valEma50d > 0 ? ("up" as const) : ("down" as const),
       data: filterSince(diffEma50d, 1), 
     },
     {
       title: "Daily RSI (14)",
-      subLabel: "Source: AlphaVantage Daily",
+      subLabel: "Source: FMP Daily",
       value: data ? fmtNum(valRsiDaily) : "---",
       trend: "neutral" as const,
       data: filterSince(rsiDaily, 1),
     },
     {
       title: "Market Breadth (Proxy)",
-      subLabel: "RSP (Eq Wgt) % > 20d SMA",
+      subLabel: "RSP % > 20d SMA (Proxy)",
       value: data ? fmtPct(valBreadth) : "---", 
       trend: valBreadth > 0 ? "up" as const : "down" as const,
       data: filterSince(diffBreadthSma20, 1),
@@ -173,21 +163,21 @@ export default function Dashboard() {
   const mediumTerm = [
     {
       title: "SPY % > 50w EMA",
-      subLabel: "Source: AlphaVantage Weekly",
+      subLabel: "Source: FMP Weekly",
       value: data ? fmtPct(valEma50w) : "---",
       trend: valEma50w > 0 ? ("up" as const) : ("down" as const),
       data: filterSince(diffEma50w, 3),
     },
     {
       title: "Weekly RSI (14)", 
-      subLabel: "Source: AlphaVantage Weekly",
+      subLabel: "Source: FMP Weekly",
       value: data ? fmtNum(valRsiWeekly) : "---",
       trend: "neutral" as const,
       data: filterSince(rsiWeekly, 3),
     },
     {
       title: "VIX Index",
-      subLabel: "Source: AlphaVantage Daily",
+      subLabel: "Source: FMP Daily",
       value: data ? fmtNum(valVix) : "---",
       trend: valVix > 20 ? ("down" as const) : ("neutral" as const), 
       data: filterSince(vixDaily, 3),
@@ -197,21 +187,21 @@ export default function Dashboard() {
   const longTerm = [
     {
       title: "Monthly RSI (14)", 
-      subLabel: "Source: AlphaVantage Monthly",
+      subLabel: "Source: FMP Monthly",
       value: data ? fmtNum(valRsiMonthly) : "---",
       trend: "up" as const,
       data: filterSince(rsiMonthly, 10),
     },
     {
       title: "SPY % > 50m EMA", 
-      subLabel: "Source: AlphaVantage Monthly",
+      subLabel: "Source: FMP Monthly",
       value: data ? fmtPct(valEma50m) : "---",
       trend: valEma50m > 0 ? ("up" as const) : ("down" as const),
       data: filterSince(diffEma50m, 10),
     },
     {
       title: "NTM P/E Multiple",
-      subLabel: "Source: AlphaVantage Overview",
+      subLabel: "Source: FMP Estimates",
       value: data ? fmtNum(peRatio) : "---",
       trend: "up" as const,
       data: [], // No history for P/E
